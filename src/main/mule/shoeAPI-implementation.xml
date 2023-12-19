@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	
+	
+	<flow name="get:\shoes">
+		<logger level="INFO" doc:name="Logger" doc:id="f5cc4645-2c7f-4b3d-83db-2cf3cd9414b1" />
+		<db:select doc:name="Get the list of Shoes" doc:id="3badc3ae-baed-474e-b12b-b8a569e4d4a2" config-ref="Database_online_config">
+			<db:sql ><![CDATA[SELECT * from shoesdb.shoes;]]></db:sql>
+		</db:select>
+		<ee:transform doc:name="Transform Message" doc:id="07315d77-e961-4208-8c28-271274772bca" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload map {
+    "Id" : $.Id,
+    "Brand" : $.Brand,
+    "type" : $.Type,
+    "price" : $.Price
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="6934a8bd-bfd2-4525-af79-ada8fd0db89d" />
+
+    </flow>
+    <flow name="post:\shoes">
+		<logger level="INFO" doc:name="Logger" doc:id="6baf6292-9cef-4fdc-b0a1-bee8b34a98d9" />
+		<set-variable value="#[[]as Array]" doc:name="Initialize [ ]" doc:id="41239c97-e0e2-4693-8fb2-1c574d57abac" variableName="Details"/>
+		<try doc:name="Try" doc:id="70db8f6c-3fe9-475a-8239-0ca6ad3e27ee" transactionalAction="ALWAYS_BEGIN">
+			<foreach doc:name="For Each" doc:id="76f34033-1377-4e12-9746-7d7df63c0204" collection="#[payload]">
+			<logger level="INFO" doc:name="Logger" doc:id="9840bf02-46aa-43b4-ab6a-bf7db358588e" message="#[vars.Details]" />
+			<db:insert doc:name="Add new Shoe" doc:id="695a9721-a346-497b-b6a1-7973420f571c" config-ref="Database_online_config" target="insertDetails" transactionalAction="ALWAYS_JOIN">
+			<db:sql><![CDATA[INSERT INTO shoes (Brand, Type, Price)
+VALUES ( :Brand, :shoetype, :price);]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+	Brand : payload.Brand,
+	shoetype : payload.shoetype,
+	price : payload.price
+}]]]></db:input-parameters>
+		</db:insert>
+			<set-variable value="#[vars.Details + vars.insertDetails]" doc:name="Details" doc:id="ab746139-293a-40f9-80b9-f2a13d98529a" variableName="Details" />
+		</foreach>
+		</try>
+		<ee:transform doc:name="Transform Message" doc:id="b7018021-1529-4d0a-bd1f-093efcd3e3c0">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"Message" : "Shoes added Successfully to the collection",
+	"Details" : {
+    "No. of Shoes Added" : sum(vars.Details.'affectedRows')
+}
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="0efc4c08-255a-4d7b-ad22-a6d0a080dd42" message="#[payload]"/>
+
+    </flow>
+    <flow name="get:\shoes\(Id)">
+		<logger level="INFO" doc:name="Logger" doc:id="cc858423-6ee4-4e21-a535-148307c1d64f" />
+		<set-variable value="#[attributes.uriParams.Id]" doc:name="shoeId" doc:id="65d575a4-d804-45ec-9c80-5aae2fa4dacb" variableName="shoeId"/>
+		<choice doc:name="Choice" doc:id="137fd7e7-b092-40e2-87f0-727f4243ae60" >
+			<when expression="#[%dw 2.0&#10;import isNumeric from dw::core::Strings&#10;output application/json&#10;---&#10;isNumeric(vars.shoeId) == true]">
+				<db:select doc:name="Select" doc:id="38f6c14d-8dc3-4263-ae48-e40b16515836" config-ref="Database_online_config">
+			<db:sql><![CDATA[SELECT * FROM shoesdb.shoes where Id = :Id ;]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+	Id : attributes.uriParams.Id
+}]]]></db:input-parameters>
+		</db:select>
+				<ee:transform doc:name="Transform Message" doc:id="333b0bc3-9dac-445a-8008-88fc283c3d9c">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+if (!isEmpty(payload)) (
+    payload map {
+    "Id" : $.Id,
+    "Brand" : $.Brand,
+    "type" : $.Type,
+    "price" : $.Price
+}
+)
+else "No shoe for the mentioned ID"]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+			</when>
+			<otherwise >
+				<set-payload value="Invalid Id, only Numeric value is acceptable" doc:name="invalid id response" doc:id="9bb177c4-7e9c-4f2f-b4bc-ca83138b1362" />
+				<set-variable value="#[400]" doc:name="httpStatus" doc:id="cf3fd549-1bb4-408e-8044-dc71c7b6887e" variableName="httpStatus"/>
+			</otherwise>
+		</choice>
+		<logger level="INFO" doc:name="Logger" doc:id="21ebea3a-6c86-4ccb-9be4-da2c96ee78e6" message="#[payload]"/>
+
+    </flow>
+	
+	</mule>
